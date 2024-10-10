@@ -7,7 +7,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
-
+from .utils import send_otp_email
 
 class ArtistViewSet(viewsets.ModelViewSet):
     queryset = Artist.objects.all()
@@ -84,10 +84,35 @@ def delet_user(request, pk):
 def register_artist(request):
     try:
         data = JSONParser().parse(request)
+        data['first_name'] = data.get('name').split(' ')[0]
+        data['last_name'] = data.get('name').split(' ')[1]
+        try:
+            if User.objects.get(email=data.get('email')):
+                return JsonResponse({"error" : f"Something went wrong!! Erro -- Email already exist"}, status=400)
+        except Exception:
+            pass
         serializer = UserSerializer(data=data)
         if serializer.is_valid():
             serializer.save()
+            otp = Artist.objects.get(user_id=serializer.data['id']).otp
+            send_otp_email(serializer.data['email'], otp)
+            
             return JsonResponse(serializer.data, status=201)
         return JsonResponse(serializer.errors, status=400)
+    except Exception as e:
+        return JsonResponse({"error" : f"Something went wrong!! Erro --{e}"}, status=400)
+
+@api_view(['POST','OPTIONS']) 
+def verify_otp(request):
+    try:
+        data = JSONParser().parse(request)
+        artist = User.objects.get(email=data.get('email')).artists
+        otp = data.get("otp")
+        if artist.otp == otp:
+            artist.validate = True
+            artist.save()
+            return JsonResponse({"data" : f"OTP verified successfully"}, status=200)
+        
+        return JsonResponse({"data" : f"OTP not mached"}, status=400)
     except Exception as e:
         return JsonResponse({"error" : f"Something went wrong!! Erro --{e}"}, status=400)
